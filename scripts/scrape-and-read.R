@@ -2,6 +2,7 @@ library(tidyverse)
 library(rvest)
 library(tibble)
 
+### scraping code ###
 base_url <- "http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&Team=&BeginDate=2000-01-01&EndDate=2023-04-12&InjuriesChkBx=yes&Submit=Search"
 
 base_webpage <- read_html(base_url)
@@ -24,6 +25,10 @@ while (i < 25426) {
   df<- rbind(df,table_new)
   i=i+25
 }
+######
+
+# output of scrape on 4/14/23:
+df <- read.csv("/Users/mgillis/Desktop/Projects/nba-injuries/data/injuries_scraped.csv")
 
 df <- df %>% 
   rename(
@@ -35,6 +40,7 @@ df <- df %>%
   )
 
 df <- subset(df, df$acquired == "")
+df <- subset(df, !(df$name == ""))
 
 df <- df %>% 
   select(date, team, name, notes) %>% 
@@ -43,8 +49,6 @@ df <- df %>%
 
 injuries <- df %>% 
   count(name, name = "injuries")
-
-injuries <- injuries[-1,]
 
 players <- read.csv("data/all_seasons.csv")
 

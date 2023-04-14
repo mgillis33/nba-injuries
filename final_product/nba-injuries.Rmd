@@ -15,6 +15,7 @@ output:
 library(tidyverse)
 library(rvest)
 library(tibble)
+library(knitr)
 
 ```
 
@@ -23,13 +24,13 @@ library(tibble)
 
 In American Sports Media, especially during coverage of the NBA, players are often criticized for their weight/size. One notable example of late is Chet Holmgren, whose 7'1" 195 lb frame has made him a target for those who say he is too skinny to play professional basketball (especially after his season-ending injury in the summer). On the other hand, Zion Williamson, a 22 year old who stands at 6'6", 284 lb. Many of his detractors remark that he is too fat to play in the NBA, also citing injury issues.
 
-So, it seems like an analysis of the relationship between injury and weight in the NBA is warranted. To do this, we can make use of https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv data from Basketball Reference and https://www.prosportstransactions.com/basketball/.
+So, it seems like an analysis of the relationship between injury and weight in the NBA is warranted. To do this, we can make use of [data from Basketball Reference](https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv) for player stats (like weight, height, etc.) and [data from Pro Sports Transactions](https://www.prosportstransactions.com/basketball/Search/Search.php) for injuries.
 
 # Scrape and Load Data
 
 ## Injury Data
 
-First, we're going to scrape all the data from https://www.prosportstransactions.com/basketball/.
+First, we're going to scrape all the data from [Pro Sports Transactions](https://www.prosportstransactions.com/basketball/Search/Search.php). My search criteria was for "missed games due to injury" from 2000-01-01 to `r Sys.Date()`.
 
 ```{r scrape-data, eval = F}
 
@@ -95,6 +96,7 @@ df <- df %>%
 
 # remove repeat headers
 df <- subset(df, df$acquired == "")
+df <- subset(df, !(df$name == ""))
 
 # remove unwanted columns, clean names
 df <- df %>% 
@@ -106,18 +108,21 @@ df <- df %>%
 
 Now that this dataframe is clean, we can start to summarize it. We want each row to be a single NBA player, so we can use the `group_by` and `count` functions to do this.
 
-```{r}
+```{r summarize}
 
 # summarize
 injuries <- df %>% 
   count(name, name = "injuries")
 
-# delete leftover blank
-injuries <- injuries[-1,]
-
 ```
 
-Finally, we have our dataframe looking exactly how we want it to.
+Finally, we have our dataframe looking exactly how we want it to. Let's view it in a table.
+
+```{r injuries-table}
+
+kable(injuries)
+
+```
 
 ## Player Data
 
@@ -161,19 +166,33 @@ players <- players %>%
 
 ```
 
-Finally, we have our second dataset read, cleaned, and summarized.
+Finally, we have our second dataset read, cleaned, and summarized. Let's view it in a table.
+
+```{r players-table}
+
+kable(players)
+
+```
 
 ## Merging Data
 
 Now that we have our two dataframes with a shared variable, `name`, we can do an inner join. Note: Some players from the injury list do not appear on the list of players. This may be due to lack of games played, as some of the missing players only started in a few NBA games. Thus, we will use the `inner_join` function to combine these dataframes.
 
-```{r merge-dataframes}
+```{r merge-dataframes, eval = F}
 
 full_table <- inner_join(injuries, players, by = "name")
 
 ```
 
-Now we have our merged dataset, and we can begin to analyze it.
+Now we have our merged dataset, let's view it in a table.
+
+```{r full-table}
+
+kable(full_table)
+
+```
+
+We can now begin to analyze this.
 
 # Analysis
 

@@ -1509,14 +1509,18 @@ hand, Zion Williamson, a 22 year old who stands at 6’6”, 284 lb. Many of
 his detractors remark that he is too fat to play in the NBA, also citing
 injury issues.</p>
 <p>So, it seems like an analysis of the relationship between injury and
-weight in the NBA is warranted. To do this, we can make use of <a href="https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv" class="uri">https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv</a>
-data from Basketball Reference and <a href="https://www.prosportstransactions.com/basketball/" class="uri">https://www.prosportstransactions.com/basketball/</a>.</p>
+weight in the NBA is warranted. To do this, we can make use of <a href="https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv">data
+from Basketball Reference</a> for player stats (like weight, height,
+etc.) and <a href="https://www.prosportstransactions.com/basketball/Search/Search.php">data
+from Pro Sports Transactions</a> for injuries.</p>
 </div>
 <div id="scrape-and-load-data" class="section level1">
 <h1>Scrape and Load Data</h1>
 <div id="injury-data" class="section level2">
 <h2>Injury Data</h2>
-<p>First, we’re going to scrape all the data from <a href="https://www.prosportstransactions.com/basketball/" class="uri">https://www.prosportstransactions.com/basketball/</a>.</p>
+<p>First, we’re going to scrape all the data from <a href="https://www.prosportstransactions.com/basketball/Search/Search.php">Pro
+Sports Transactions</a>. My search criteria was for “missed games due to
+injury” from 2000-01-01 to 2023-04-14.</p>
 <pre class="r"><code># set base objects to scrape from
 base_url &lt;- &quot;http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&amp;Team=&amp;BeginDate=2000-01-01&amp;EndDate=2023-04-12&amp;InjuriesChkBx=yes&amp;Submit=Search&quot;
 
@@ -1573,22 +1577,19 @@ df &lt;- df %&gt;%
 
 # remove repeat headers
 df &lt;- subset(df, df$acquired == &quot;&quot;)
+df &lt;- subset(df, !(df$name == &quot;&quot;))
 
 # remove unwanted columns, clean names
 df &lt;- df %&gt;% 
   select(date, team, name, notes) %&gt;% 
   mutate(name = gsub(&quot;• &quot;, &quot;&quot;, name)) %&gt;% 
-  mutate(name = gsub(&quot;\\s*\\([^\\)]+\\) &quot;, &quot;&quot;, name))
-
-# summarize
-injuries &lt;- df %&gt;% 
-  count(name, name = &quot;injuries&quot;)
-
-# delete leftover blank
-injuries &lt;- injuries[-1,]</code></pre>
+  mutate(name = gsub(&quot;\\s*\\([^\\)]+\\) &quot;, &quot;&quot;, name))</code></pre>
 <p>Now that this dataframe is clean, we can start to summarize it. We
 want each row to be a single NBA player, so we can use the
 <code>group_by</code> and <code>count</code> functions to do this.</p>
+<pre class="r"><code># summarize
+injuries &lt;- df %&gt;% 
+  count(name, name = &quot;injuries&quot;)</code></pre>
 <p>Finally, we have our dataframe looking exactly how we want it to.</p>
 </div>
 <div id="player-data" class="section level2">
@@ -1647,10 +1648,7 @@ injury list do not appear on the list of players. This may be due to
 lack of games played, as some of the missing players only started in a
 few NBA games. Thus, we will use the <code>inner_join</code> function to
 combine these dataframes.</p>
-<pre class="r"><code>players &lt;- players
-injuries &lt;- injuries
-
-full_table &lt;- inner_join(injuries, players, by = &quot;name&quot;)</code></pre>
+<pre class="r"><code>full_table &lt;- inner_join(injuries, players, by = &quot;name&quot;)</code></pre>
 <p>Now we have our merged dataset, and we can begin to analyze it.</p>
 </div>
 </div>

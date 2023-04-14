@@ -1,6 +1,7 @@
 library(tidyverse)
 library(rvest)
 library(tibble)
+library(tidymodels)
 
 ### scraping code ###
 base_url <- "http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&Team=&BeginDate=2000-01-01&EndDate=2023-04-12&InjuriesChkBx=yes&Submit=Search"
@@ -64,7 +65,7 @@ players <- players %>%
   group_by(name) %>% 
   summarize(across(c(player_height, player_weight, gp, pts, reb, ast, net_rating, oreb_pct, dreb_pct, usg_pct, ts_pct, ast_pct), mean))
 
-full_table <- inner_join(injuries_freq, players, by = "name")
+full_table <- inner_join(injuries, players, by = "name")
 
 full_table %>% 
   ggplot(aes(x = player_weight)) +
@@ -81,3 +82,9 @@ full_table %>%
   geom_point() +
   geom_smooth(method = "lm") +
   theme_bw()
+
+injuries_weight <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  fit(player_weight ~ injuries, data = full_table)
+
+glance(injuries_weight)

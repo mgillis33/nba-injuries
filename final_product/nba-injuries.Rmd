@@ -7,3 +7,173 @@ output:
     toc: true
     toc_float: true
 ---
+---
+# Packages
+
+```{r load-packages, message = F}
+
+library(tidyverse)
+library(rvest)
+library(tibble)
+
+```
+
+
+# Introduction
+
+In American Sports Media, especially during coverage of the NBA, players are often criticized for their weight/size. One notable example of late is Chet Holmgren, whose 7'1" 195 lb frame has made him a target for those who say he is too skinny to play professional basketball (especially after his season-ending injury in the summer). On the other hand, Zion Williamson, a 22 year old who stands at 6'6", 284 lb. Many of his detractors remark that he is too fat to play in the NBA, also citing injury issues.
+
+So, it seems like an analysis of the relationship between injury and weight in the NBA is warranted. To do this, we can make use of https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv data from Basketball Reference and https://www.prosportstransactions.com/basketball/.
+
+# Scrape and Load Data
+
+## Injury Data
+
+First, we're going to scrape all the data from https://www.prosportstransactions.com/basketball/.
+
+```{r scrape-data, eval = F}
+
+# set base objects to scrape from
+base_url <- "http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&Team=&BeginDate=2000-01-01&EndDate=2023-04-12&InjuriesChkBx=yes&Submit=Search"
+
+base_webpage <- read_html(base_url)
+
+new_urls <- "http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&Team=&BeginDate=2000-01-01&EndDate=2023-04-12&InjuriesChkBx=yes&Submit=Search&start=%s"
+
+table_base <- html_table(base_webpage)[[1]] %>% 
+  as_tibble(.name_repair = "unique")
+
+# make dataframes
+table_new <- data.frame()
+df <- data.frame()
+
+# iterate through each page on the site and add new data to dataframe
+i <- 0
+
+while (i < 25426) {
+  print(i)
+  new_webpage <- read_html(sprintf(new_urls,i))
+  table_new <- rvest::html_table(new_webpage)[[1]] %>% 
+    tibble::as_tibble(.name_repair = "unique") # repair the repeated columns
+  df<- rbind(df,table_new)
+  i=i+25
+}
+
+write.csv(injuries_freq, file = "data/injuries.csv")
+
+```
+
+In order for this document to render, we cannot scrape every single time we produce it. Thus, I saved the output as a .csv file which I can read now and get the same result.
+
+```{r read-file}
+
+df <- read.csv("/Users/mgillis/Desktop/Projects/nba-injuries/data/injuries_scraped.csv")
+
+```
+
+Let's glimpse this data:
+
+```{r glimpse}
+
+glimpse(df)
+
+```
+
+We're going to want to clean this data a bit; change the column names, remove repeat headers, clean the names up (remove bullet points), etc.
+
+```{r clean-data, eval = F}
+
+# rename columns
+df <- df %>% 
+  rename(
+    date = X1,
+    team = X2,
+    acquired = X3,
+    name = X4,
+    notes = X5
+  )
+
+# remove repeat headers
+df <- subset(df, df$acquired == "")
+
+# remove unwanted columns, clean names
+df <- df %>% 
+  select(date, team, name, notes) %>% 
+  mutate(name = gsub("• ", "", name)) %>% 
+  mutate(name = gsub("\\s*\\([^\\)]+\\) ", "", name))
+
+```
+
+Now that this dataframe is clean, we can start to summarize it. We want each row to be a single NBA player, so we can use the `group_by` and `count` functions to do this.
+
+```{r}
+
+# summarize
+injuries <- df %>% 
+  count(name, name = "injuries")
+
+# delete leftover blank
+injuries <- injuries[-1,]
+
+```
+
+Finally, we have our dataframe looking exactly how we want it to.
+
+## Player Data
+
+Now, to get the weight data, we can take the .csv file from https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv
+
+```{r read-file-2}
+
+players <- read.csv("/Users/mgillis/Desktop/Projects/nba-injuries/data/all_seasons.csv")
+
+```
+
+Again, let's glimpse:
+
+```{r glimpse-2}
+
+glimpse(players)
+
+```
+
+We're also going to want to clean this up. Fortunately, it will not take as much work as the other dataframe:
+
+```{r clean-data-2}
+
+players <- players %>% 
+  select(!c(X, team_abbreviation, age)) %>% 
+  rename(name = player_name) %>% 
+  mutate(player_weight = player_weight * 2.20462) %>% 
+  mutate(player_height = player_height * 0.393701) %>% 
+  mutate(season = gsub("\\.-*", "", season)) %>% 
+  mutate(name = gsub("\\ /.*", "", name))
+
+```
+
+Now, we can summarize this cleaned data like we did for the other dataset. Now, we are collapsing the years, and again sorting by the player's name.
+
+```{r summarize-2}
+
+players <- players %>% 
+  group_by(name) %>% 
+  summarize(across(c(player_height, player_weight, gp, pts, reb, ast, net_rating, oreb_pct, dreb_pct, usg_pct, ts_pct, ast_pct), mean))
+
+```
+
+Finally, we have our second dataset read, cleaned, and summarized.
+
+## Merging Data
+
+Now that we have our two dataframes with a shared variable, `name`, we can do an inner join. Note: Some players from the injury list do not appear on the list of players. This may be due to lack of games played, as some of the missing players only started in a few NBA games. Thus, we will use the `inner_join` function to combine these dataframes.
+
+```{r merge-dataframes}
+
+full_table <- inner_join(injuries, players, by = "name")
+
+```
+
+Now we have our merged dataset, and we can begin to analyze it.
+
+# Analysis
+

@@ -1491,7 +1491,172 @@ border-radius: 0px;
 </div>
 
 
+<hr />
+<div id="packages" class="section level1">
+<h1>Packages</h1>
+<pre class="r"><code>library(tidyverse)
+library(rvest)
+library(tibble)</code></pre>
+</div>
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>In American Sports Media, especially during coverage of the NBA,
+players are often criticized for their weight/size. One notable example
+of late is Chet Holmgren, whose 7’1” 195 lb frame has made him a target
+for those who say he is too skinny to play professional basketball
+(especially after his season-ending injury in the summer). On the other
+hand, Zion Williamson, a 22 year old who stands at 6’6”, 284 lb. Many of
+his detractors remark that he is too fat to play in the NBA, also citing
+injury issues.</p>
+<p>So, it seems like an analysis of the relationship between injury and
+weight in the NBA is warranted. To do this, we can make use of <a href="https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv" class="uri">https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv</a>
+data from Basketball Reference and <a href="https://www.prosportstransactions.com/basketball/" class="uri">https://www.prosportstransactions.com/basketball/</a>.</p>
+</div>
+<div id="scrape-and-load-data" class="section level1">
+<h1>Scrape and Load Data</h1>
+<div id="injury-data" class="section level2">
+<h2>Injury Data</h2>
+<p>First, we’re going to scrape all the data from <a href="https://www.prosportstransactions.com/basketball/" class="uri">https://www.prosportstransactions.com/basketball/</a>.</p>
+<pre class="r"><code># set base objects to scrape from
+base_url &lt;- &quot;http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&amp;Team=&amp;BeginDate=2000-01-01&amp;EndDate=2023-04-12&amp;InjuriesChkBx=yes&amp;Submit=Search&quot;
 
+base_webpage &lt;- read_html(base_url)
+
+new_urls &lt;- &quot;http://www.prosportstransactions.com/basketball/Search/SearchResults.php?Player=&amp;Team=&amp;BeginDate=2000-01-01&amp;EndDate=2023-04-12&amp;InjuriesChkBx=yes&amp;Submit=Search&amp;start=%s&quot;
+
+table_base &lt;- html_table(base_webpage)[[1]] %&gt;% 
+  as_tibble(.name_repair = &quot;unique&quot;)
+
+# make dataframes
+table_new &lt;- data.frame()
+df &lt;- data.frame()
+
+# iterate through each page on the site and add new data to dataframe
+i &lt;- 0
+
+while (i &lt; 25426) {
+  print(i)
+  new_webpage &lt;- read_html(sprintf(new_urls,i))
+  table_new &lt;- rvest::html_table(new_webpage)[[1]] %&gt;% 
+    tibble::as_tibble(.name_repair = &quot;unique&quot;) # repair the repeated columns
+  df&lt;- rbind(df,table_new)
+  i=i+25
+}
+
+write.csv(injuries_freq, file = &quot;data/injuries.csv&quot;)</code></pre>
+<p>In order for this document to render, we cannot scrape every single
+time we produce it. Thus, I saved the output as a .csv file which I can
+read now and get the same result.</p>
+<pre class="r"><code>df &lt;- read.csv(&quot;/Users/mgillis/Desktop/Projects/nba-injuries/data/injuries_scraped.csv&quot;)</code></pre>
+<p>Let’s glimpse this data:</p>
+<pre class="r"><code>glimpse(df)</code></pre>
+<pre><code>## Rows: 26,448
+## Columns: 6
+## $ X  &lt;int&gt; 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, …
+## $ X1 &lt;chr&gt; &quot;Date&quot;, &quot;2000-01-03&quot;, &quot;2000-01-03&quot;, &quot;2000-01-04&quot;, &quot;2000-01-04&quot;, &quot;20…
+## $ X2 &lt;chr&gt; &quot;Team&quot;, &quot;Celtics&quot;, &quot;Warriors&quot;, &quot;Celtics&quot;, &quot;Grizzlies&quot;, &quot;Grizzlies&quot;,…
+## $ X3 &lt;chr&gt; &quot;Acquired&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;,…
+## $ X4 &lt;chr&gt; &quot;Relinquished&quot;, &quot;• Dana Barros&quot;, &quot;• Chris Mills&quot;, &quot;• Dana Barros&quot;, …
+## $ X5 &lt;chr&gt; &quot;Notes&quot;, &quot;flu (DNP)&quot;, &quot;bone spurs in right ankle (DNP)&quot;, &quot;flu (DNP)…</code></pre>
+<p>We’re going to want to clean this data a bit; change the column
+names, remove repeat headers, clean the names up (remove bullet points),
+etc.</p>
+<pre class="r"><code># rename columns
+df &lt;- df %&gt;% 
+  rename(
+    date = X1,
+    team = X2,
+    acquired = X3,
+    name = X4,
+    notes = X5
+  )
+
+# remove repeat headers
+df &lt;- subset(df, df$acquired == &quot;&quot;)
+
+# remove unwanted columns, clean names
+df &lt;- df %&gt;% 
+  select(date, team, name, notes) %&gt;% 
+  mutate(name = gsub(&quot;• &quot;, &quot;&quot;, name)) %&gt;% 
+  mutate(name = gsub(&quot;\\s*\\([^\\)]+\\) &quot;, &quot;&quot;, name))
+
+# summarize
+injuries &lt;- df %&gt;% 
+  count(name, name = &quot;injuries&quot;)
+
+# delete leftover blank
+injuries &lt;- injuries[-1,]</code></pre>
+<p>Now that this dataframe is clean, we can start to summarize it. We
+want each row to be a single NBA player, so we can use the
+<code>group_by</code> and <code>count</code> functions to do this.</p>
+<p>Finally, we have our dataframe looking exactly how we want it to.</p>
+</div>
+<div id="player-data" class="section level2">
+<h2>Player Data</h2>
+<p>Now, to get the weight data, we can take the .csv file from <a href="https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv" class="uri">https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv</a></p>
+<pre class="r"><code>players &lt;- read.csv(&quot;/Users/mgillis/Desktop/Projects/nba-injuries/data/all_seasons.csv&quot;)</code></pre>
+<p>Again, let’s glimpse:</p>
+<pre class="r"><code>glimpse(players)</code></pre>
+<pre><code>## Rows: 12,305
+## Columns: 22
+## $ X                 &lt;int&gt; 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15…
+## $ player_name       &lt;chr&gt; &quot;Dennis Rodman&quot;, &quot;Dwayne Schintzius&quot;, &quot;Earl Cureton&quot;…
+## $ team_abbreviation &lt;chr&gt; &quot;CHI&quot;, &quot;LAC&quot;, &quot;TOR&quot;, &quot;DAL&quot;, &quot;MIA&quot;, &quot;HOU&quot;, &quot;LAL&quot;, &quot;LA…
+## $ age               &lt;dbl&gt; 36, 28, 39, 24, 34, 38, 25, 28, 29, 28, 27, 27, 28, …
+## $ player_height     &lt;dbl&gt; 198.12, 215.90, 205.74, 203.20, 205.74, 200.66, 198.…
+## $ player_weight     &lt;dbl&gt; 99.79024, 117.93392, 95.25432, 100.69742, 108.86208,…
+## $ college           &lt;chr&gt; &quot;Southeastern Oklahoma State&quot;, &quot;Florida&quot;, &quot;Detroit M…
+## $ country           &lt;chr&gt; &quot;USA&quot;, &quot;USA&quot;, &quot;USA&quot;, &quot;USA&quot;, &quot;USA&quot;, &quot;USA&quot;, &quot;USA&quot;, &quot;US…
+## $ draft_year        &lt;chr&gt; &quot;1986&quot;, &quot;1990&quot;, &quot;1979&quot;, &quot;1995&quot;, &quot;1985&quot;, &quot;1981&quot;, &quot;199…
+## $ draft_round       &lt;chr&gt; &quot;2&quot;, &quot;1&quot;, &quot;3&quot;, &quot;1&quot;, &quot;1&quot;, &quot;2&quot;, &quot;1&quot;, &quot;1&quot;, &quot;Undrafted&quot;,…
+## $ draft_number      &lt;chr&gt; &quot;27&quot;, &quot;24&quot;, &quot;58&quot;, &quot;9&quot;, &quot;10&quot;, &quot;29&quot;, &quot;10&quot;, &quot;27&quot;, &quot;Undr…
+## $ gp                &lt;int&gt; 55, 15, 9, 64, 27, 52, 80, 77, 71, 82, 9, 1, 13, 3, …
+## $ pts               &lt;dbl&gt; 5.7, 2.3, 0.8, 3.7, 2.4, 8.2, 17.2, 14.9, 5.7, 6.9, …
+## $ reb               &lt;dbl&gt; 16.1, 1.5, 1.0, 2.3, 2.4, 2.7, 4.1, 8.0, 1.6, 1.5, 0…
+## $ ast               &lt;dbl&gt; 3.1, 0.3, 0.4, 0.6, 0.2, 1.0, 3.4, 1.6, 1.3, 3.0, 1.…
+## $ net_rating        &lt;dbl&gt; 16.1, 12.3, -2.1, -8.7, -11.2, 4.1, 4.1, 3.3, -0.3, …
+## $ oreb_pct          &lt;dbl&gt; 0.186, 0.078, 0.105, 0.060, 0.109, 0.034, 0.035, 0.0…
+## $ dreb_pct          &lt;dbl&gt; 0.323, 0.151, 0.102, 0.149, 0.179, 0.126, 0.091, 0.1…
+## $ usg_pct           &lt;dbl&gt; 0.100, 0.175, 0.103, 0.167, 0.127, 0.220, 0.209, 0.2…
+## $ ts_pct            &lt;dbl&gt; 0.479, 0.430, 0.376, 0.399, 0.611, 0.541, 0.559, 0.5…
+## $ ast_pct           &lt;dbl&gt; 0.113, 0.048, 0.148, 0.077, 0.040, 0.102, 0.149, 0.0…
+## $ season            &lt;chr&gt; &quot;1996-97&quot;, &quot;1996-97&quot;, &quot;1996-97&quot;, &quot;1996-97&quot;, &quot;1996-97…</code></pre>
+<p>We’re also going to want to clean this up. Fortunately, it will not
+take as much work as the other dataframe:</p>
+<pre class="r"><code>players &lt;- players %&gt;% 
+  select(!c(X, team_abbreviation, age)) %&gt;% 
+  rename(name = player_name) %&gt;% 
+  mutate(player_weight = player_weight * 2.20462) %&gt;% 
+  mutate(player_height = player_height * 0.393701) %&gt;% 
+  mutate(season = gsub(&quot;\\.-*&quot;, &quot;&quot;, season)) %&gt;% 
+  mutate(name = gsub(&quot;\\ /.*&quot;, &quot;&quot;, name))</code></pre>
+<p>Now, we can summarize this cleaned data like we did for the other
+dataset. Now, we are collapsing the years, and again sorting by the
+player’s name.</p>
+<pre class="r"><code>players &lt;- players %&gt;% 
+  group_by(name) %&gt;% 
+  summarize(across(c(player_height, player_weight, gp, pts, reb, ast, net_rating, oreb_pct, dreb_pct, usg_pct, ts_pct, ast_pct), mean))</code></pre>
+<p>Finally, we have our second dataset read, cleaned, and
+summarized.</p>
+</div>
+<div id="merging-data" class="section level2">
+<h2>Merging Data</h2>
+<p>Now that we have our two dataframes with a shared variable,
+<code>name</code>, we can do an inner join. Note: Some players from the
+injury list do not appear on the list of players. This may be due to
+lack of games played, as some of the missing players only started in a
+few NBA games. Thus, we will use the <code>inner_join</code> function to
+combine these dataframes.</p>
+<pre class="r"><code>players &lt;- players
+injuries &lt;- injuries
+
+full_table &lt;- inner_join(injuries, players, by = &quot;name&quot;)</code></pre>
+<p>Now we have our merged dataset, and we can begin to analyze it.</p>
+</div>
+</div>
+<div id="analysis" class="section level1">
+<h1>Analysis</h1>
+</div>
 
 
 

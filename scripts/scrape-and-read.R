@@ -34,24 +34,17 @@ df <- df %>%
     notes = X5
   )
 
-j <- 1
+df <- subset(df, df$acquired == "")
 
-while (j < 30000) {
-  if (!(df$Acquired[j] == "")) {
-    df <- df[-j,]
-  }
-  j <- j + 1
-}
-
-injuries <- df %>% 
+df <- df %>% 
   select(date, team, name, notes) %>% 
   mutate(name = gsub("• ", "", name)) %>% 
   mutate(name = gsub("\\s*\\([^\\)]+\\) ", "", name))
 
-injuries_freq <- injuries %>% 
+injuries <- df %>% 
   count(name, name = "injuries")
 
-injuries_freq <- injuries_freq[-1,]
+injuries <- injuries[-1,]
 
 players <- read.csv("data/all_seasons.csv")
 

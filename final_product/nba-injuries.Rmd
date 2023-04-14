@@ -6,6 +6,7 @@ output:
   html_document:
     toc: true
     toc_float: true
+    theme: journal
 ---
 ---
 # Packages
@@ -16,6 +17,8 @@ library(tidyverse)
 library(rvest)
 library(tibble)
 library(knitr)
+library(tidymodels)
+library(DT)
 
 ```
 
@@ -24,7 +27,7 @@ library(knitr)
 
 In American Sports Media, especially during coverage of the NBA, players are often criticized for their weight/size. One notable example of late is Chet Holmgren, whose 7'1" 195 lb frame has made him a target for those who say he is too skinny to play professional basketball (especially after his season-ending injury in the summer). On the other hand, Zion Williamson, a 22 year old who stands at 6'6", 284 lb. Many of his detractors remark that he is too fat to play in the NBA, also citing injury issues.
 
-So, it seems like an analysis of the relationship between injury and weight in the NBA is warranted. To do this, we can make use of [data from Basketball Reference](https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv) for player stats (like weight, height, etc.) and [data from Pro Sports Transactions](https://www.prosportstransactions.com/basketball/Search/Search.php) for injuries.
+So, it seems like an analysis of the relationship between injury and BMI in the NBA is warranted. To do this, we can make use of [data from Basketball Reference](https://www.kaggle.com/datasets/justinas/nba-players-data?select=all_seasons.csv) for player stats (like weight, height, etc.) and [data from Pro Sports Transactions](https://www.prosportstransactions.com/basketball/Search/Search.php) for injuries.
 
 # Scrape and Load Data
 
@@ -80,9 +83,9 @@ glimpse(df)
 
 ```
 
-We're going to want to clean this data a bit; change the column names, remove repeat headers, clean the names up (remove bullet points), etc.
+We're going to want to clean this data a bit; change the column names, remove repeat headers, remove games missed due to illness or personal reasons, clean the names up (remove bullet points), etc.
 
-```{r clean-data, eval = F}
+```{r clean-data}
 
 # rename columns
 df <- df %>% 
@@ -94,9 +97,18 @@ df <- df %>%
     notes = X5
   )
 
-# remove repeat headers
-df <- subset(df, df$acquired == "")
-df <- subset(df, !(df$name == ""))
+# remove repeat headers, missed games due to illness, head coach injuries, and other miscellaneous issues
+df <- subset(df, df$acquired == "" &
+               df$name != "" &
+               !(grepl("head coach", df$notes)) &
+               !(grepl("illness", df$notes)) &
+               !(grepl("flu", df$notes)) &
+               !(grepl("virus", df$notes)) &
+               !(grepl("health", df$notes)) &
+               !(grepl("personal", df$notes)) &
+               !(grepl("personal", df$notes)) &
+               !(grepl("child", df$notes))
+             )
 
 # remove unwanted columns, clean names
 df <- df %>% 
@@ -120,7 +132,7 @@ Finally, we have our dataframe looking exactly how we want it to. Let's view it 
 
 ```{r injuries-table}
 
-kable(injuries)
+datatable(injuries)
 
 ```
 
@@ -130,7 +142,7 @@ Now, to get the weight data, we can take the .csv file from https://www.kaggle.c
 
 ```{r read-file-2}
 
-players <- read.csv("/Users/mgillis/Desktop/Projects/nba-injuries/data/all_seasons.csv")
+df2 <- read.csv("/Users/mgillis/Desktop/Projects/nba-injuries/data/all_seasons.csv")
 
 ```
 
@@ -138,7 +150,7 @@ Again, let's glimpse:
 
 ```{r glimpse-2}
 
-glimpse(players)
+glimpse(df2)
 
 ```
 
@@ -146,11 +158,12 @@ We're also going to want to clean this up. Fortunately, it will not take as much
 
 ```{r clean-data-2}
 
-players <- players %>% 
+df2 <- df2 %>% 
   select(!c(X, team_abbreviation, age)) %>% 
   rename(name = player_name) %>% 
   mutate(player_weight = player_weight * 2.20462) %>% 
   mutate(player_height = player_height * 0.393701) %>% 
+  mutate(bmi = (player_weight/(player_height^2))*703) %>% 
   mutate(season = gsub("\\.-*", "", season)) %>% 
   mutate(name = gsub("\\ /.*", "", name))
 
@@ -160,9 +173,10 @@ Now, we can summarize this cleaned data like we did for the other dataset. Now, 
 
 ```{r summarize-2}
 
-players <- players %>% 
+players <- df2 %>% 
   group_by(name) %>% 
-  summarize(across(c(player_height, player_weight, gp, pts, reb, ast, net_rating, oreb_pct, dreb_pct, usg_pct, ts_pct, ast_pct), mean))
+  summarize(across(c(bmi, player_height, player_weight, gp, pts, reb, ast), mean)) %>% 
+  mutate(across(where(is.numeric), round, 2))
 
 ```
 
@@ -170,7 +184,7 @@ Finally, we have our second dataset read, cleaned, and summarized. Let's view it
 
 ```{r players-table}
 
-kable(players)
+datatable(players)
 
 ```
 
@@ -178,7 +192,7 @@ kable(players)
 
 Now that we have our two dataframes with a shared variable, `name`, we can do an inner join. Note: Some players from the injury list do not appear on the list of players. This may be due to lack of games played, as some of the missing players only started in a few NBA games. Thus, we will use the `inner_join` function to combine these dataframes.
 
-```{r merge-dataframes, eval = F}
+```{r merge-dataframes}
 
 full_table <- inner_join(injuries, players, by = "name")
 
@@ -188,7 +202,7 @@ Now we have our merged dataset, let's view it in a table.
 
 ```{r full-table}
 
-kable(full_table)
+datatable(full_table)
 
 ```
 
@@ -196,3 +210,167 @@ We can now begin to analyze this.
 
 # Analysis
 
+## Summary Stats
+
+Let's do some basic analysis and visualization of our variables of interest.
+
+### BMI
+
+Here's a histogram of the distribution of BMI across the NBA:
+
+```{r bmi-viz, message = F}
+
+full_table %>% 
+  ggplot(aes(x = bmi)) +
+  geom_histogram() +
+  theme_bw()
+
+```
+It looks to be relatively normal, so we will use **mean** and **standard deviation** to report the center and spread.
+
+Here's a list of the summary stats for BMI throughout the NBA:
+
+```{r bmi-stats}
+
+tibble(
+  n = nrow(full_table),
+  mean = mean(full_table$bmi),
+  sd = sd(full_table$bmi),
+  min = min(full_table$bmi),
+  max = max(full_table$bmi)
+)
+
+```
+
+### Injuries
+
+Here's a histogram of the distribution of BMI across the NBA:
+
+```{r injury-viz, message = F}
+
+full_table %>% 
+  ggplot(aes(x = injuries)) +
+  geom_histogram() +
+  theme_bw()
+
+```
+
+This distribution is heavily skewed, so we will use **median** and **IQR** as a measure of center and spread for injuries.
+
+Here's a list of the summary stats for injuries throughout the NBA:
+
+```{r injury-stats}
+
+tibble(
+  n = nrow(full_table),
+  median = median(full_table$injuries),
+  iqr = IQR(full_table$injuries),
+  min = min(full_table$injuries),
+  max = max(full_table$injuries)
+)
+
+```
+
+## Injuries vs. BMI
+
+Now, let's analyze the relationship between `injuries` and `bmi` using a scatterplot.
+
+```{r scatterplot, message = F}
+
+full_table %>% 
+  ggplot(aes(x = bmi, y = injuries)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm") +
+  theme_bw()
+
+```
+
+We can see that this relationship does not even appear to be linear, implying that BMI is **not** a good predictor for number of injuries that a player will sustain over their career. Let's take a look at some of the numbers from this model:
+
+```{r}
+
+injuries_bmi <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  fit(injuries ~ bmi, data = full_table)
+
+parsnip::tidy(injuries_bmi)
+
+glance(injuries_bmi)
+
+```
+
+As seen in the scatterplot, although the result is significant `p < 0.01`, the **r squared* value is only `0.0006`, which means that only `0.6%` of the variation in the injuries can be explained by a player's BMI, reinforcing this idea that BMI is not a good predictor of injuries.
+
+## Other Variables
+
+Let's make a function that can read any explanatory variable name and return a linear model with `injuries` as the response variable.
+
+```{r}
+
+lm_stats <- function(variable_of_interest){
+  
+  response_variable <- full_table %>% 
+    pull(injuries)
+  
+  explanatory_variable <- full_table %>% 
+    pull(variable_of_interest)
+  
+  new_df <- data.frame(response_variable, explanatory_variable)
+  
+  new_fit <- linear_reg() %>% 
+    set_engine("lm") %>% 
+    fit(response_variable ~ explanatory_variable, data = new_df )
+  
+  slope <- tidy(new_fit) %>% 
+    filter(term == "explanatory_variable") %>%
+    pull(estimate)
+  
+  r_squared <- glance(new_fit) %>% 
+    pull(r.squared)
+  
+  p_value <- glance(new_fit) %>% 
+    pull(p.value)
+  
+  return(
+    list(
+      slope = slope, 
+      r_squared = r_squared, 
+      p_value = p_value
+    )
+  )
+  
+}
+
+```
+
+Now, we can use this function to iterate through each numeric variable and test it's relationship with the `injuries` variable.
+
+```{r}
+
+variable_names <- full_table %>% 
+  select_if(is.numeric) %>%
+  select(!injuries) %>%
+  names()
+
+injury_models <- data.frame(variable_names,slope = NA, r_squared = NA, p_value = NA)
+
+row_index <- 1
+
+for(row_index in 1:nrow(injury_models)){
+  
+  stats_results <- lm_stats(variable_of_interest = injury_models[row_index, "variable_names"])
+  
+  injury_models[row_index, "slope"] <- stats_results$slope
+  injury_models[row_index,"r_squared"] <- stats_results$r_squared
+  injury_models[row_index,"p_value"] <- stats_results$p_value
+  
+}
+
+injury_models <- injury_models %>% 
+  mutate(across(where(is.numeric), round, 5))
+
+datatable(injury_models)
+
+```
+
+Once again, we can see that `bmi` or even `player_weight` and `player_height` are **not** good predictors for injury count. In fact, the variable with the highest r squared value is `pts`, with a slope of about `1.5`, implying that the more points you score, the predicted number of injuries in our model increases.
